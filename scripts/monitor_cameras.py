@@ -1176,9 +1176,25 @@ def fetch_weatherlink_station(session: requests.Session) -> dict:
     return result
 
 
+def probe_cigefi(session: requests.Session) -> None:
+    """Sondeo temporal: solo registra el HTML de la página de estaciones del CIGEFI."""
+    import re as _re
+    try:
+        r = session.get("https://tooji.cigefi.ucr.ac.cr/estaciones/", timeout=HTTP_TIMEOUT)
+        html = r.text
+        logging.info("CIGEFI %s len=%s", r.status_code, len(html))
+        for u in sorted(set(_re.findall(r"""(?:src|href)=["']([^"']+)["']""", html)))[:60]:
+            logging.info("CIGEFI link %s", u)
+        for u in sorted(set(_re.findall(r"""["'](/?[A-Za-z0-9_./-]*(?:api|json|data|estaciones)[A-Za-z0-9_./?=&-]*)["']""", html)))[:60]:
+            logging.info("CIGEFI ref %s", u)
+    except Exception as exc:
+        logging.info("CIGEFI falló: %s", exc)
+
+
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     session = session_with_headers()
+    probe_cigefi(session)
     catalog = load_catalog(session)
     previous_payload = read_previous_payload()
     previous_rows = {
