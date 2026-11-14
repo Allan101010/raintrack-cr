@@ -83,6 +83,20 @@ class UcrVantageTests(unittest.TestCase):
         self.assertEqual(afternoon["image_timestamp"], "2026-11-14T19:05:00Z")
 
 
+class UcrSanLuisTests(unittest.TestCase):
+    def test_sums_last_hour_and_today(self):
+        text = (
+            "2026-11-14 07:10:10: tipo=MV_RSL, temp=23.8,rh=85,te525=0.2,bar=931.1\n"
+            "2026-11-14 08:00:10: tipo=MV_RSL, temp=23.9,rh=88,te525=0.3,bar=931.1\n"
+            "2026-11-14 08:12:10: tipo=MV_RSL, temp=24.0,rh=86.6,te525=0.1,bar=931.2\n"
+        )
+        values = cams.parse_ucr_sanluis(text)
+        self.assertEqual(values["image_timestamp"], "2026-11-14T14:12:10Z")
+        self.assertEqual(values["rain_last_hour_mm"], 0.4)
+        self.assertEqual(values["rain_today_mm"], 0.6)
+        self.assertEqual(cams.parse_ucr_sanluis("basura"), {})
+
+
 class CameraSourcesTests(unittest.TestCase):
     def test_config_file_matches_loaded_constants(self):
         raw = json.loads(cams.CAMERA_SOURCES_PATH.read_text(encoding="utf-8"))

@@ -1153,6 +1153,80 @@ def collect_ucr_stations(session: requests.Session) -> list[dict]:
     return rows
 
 
+UCR_SANLUIS_URL = UCR_BASE + "SanLuis/scripts/bash/data.txt"
+UCR_SANLUIS_PAGE = UCR_BASE + "SanLuis/"
+UCR_LOCAL_TZ = timezone(timedelta(hours=-6))
+
+
+def parse_ucr_sanluis(text: str) -> dict:
+    """Interpreta el registro por minuto de San Luis (te525 = lluvia por registro, se suma)."""
+    entries = []
+    for line in text.rstrip().rsplit("\n", 1500)[-1500:]:
+        match = re.match(r"(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2}):.*", line)
+        if not match:
+            continue
+        values = dict(re.findall(r"(\w+)=(-?[0-9.]+)", line))
+        year, month, day, hour, minute, second = (int(v) for v in match.groups())
+        try:
+            local = datetime(year, month, day, hour, minute, second, tzinfo=UCR_LOCAL_TZ)
+        except ValueError:
+            continue
+        entries.append((local, values))
+    if not entries:
+        return {}
+    latest = entries[-1][0]
+
+    def rain(values):
+        try:
+            return max(0.0, float(values.get("te525", 0)))
+        except ValueError:
+            return 0.0
+
+    last_hour = sum(rain(v) for t, v in entries if latest - t < timedelta(minutes=60))
+    today = sum(rain(v) for t, v in entries if t.date() == latest.date())
+    last_values = entries[-1][1]
+    return {
+        "image_timestamp": latest.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        "rain_last_hour_mm": round(last_hour, 1),
+        "rain_today_mm": round(today, 1),
+        "temperature_c": float(last_values["temp"]) if "temp" in last_values else None,
+        "humidity_percent": float(last_values["rh"]) if "rh" in last_values else None,
+        "pressure_hpa": float(last_values["bar"]) if "bar" in last_values else None,
+    }
+
+
+def collect_ucr_sanluis(session: requests.Session) -> dict:
+    row = {
+        "id": "ucr-sanluis", "station_name": "Estación UCR · Reserva Biológica San Luis (Monteverde)",
+        "zone": "Pacífico Norte", "lat": 10.2830, "lon": -84.7870,
+        "coordinate_note": "Ubicación aproximada de la localidad; no es la posición exacta del sensor.",
+        "page_url": UCR_SANLUIS_PAGE, "source_url": UCR_SANLUIS_URL,
+        "source_type": "ucr_station", "data_source": "ucr_cigefi_logger",
+        "status": "offline", "availability_status": "offline", "checked_at": iso_now(),
+        "image_timestamp": None, "image_age_minutes": None, "image_timestamp_source": "not_provided",
+        "rain_last_hour_mm": None, "rain_since_7am_mm": None, "rain_observed": False,
+    }
+    try:
+        response = session.get(UCR_SANLUIS_URL, timeout=60)
+        response.raise_for_status()
+        values = parse_ucr_sanluis(response.text)
+        if not values:
+            raise ValueError("el registro no tiene lecturas reconocibles")
+        row.update(values)
+        row.update(assess_station_freshness(row.get("image_timestamp")))
+        row["status"] = row["availability_status"]
+        row["image_timestamp_source"] = "ucr_logger"
+        row["rain_observed"] = bool(row["rain_last_hour_mm"] and row["rain_last_hour_mm"] > 0
+                                    and row["availability_status"] == "online")
+        row["message"] = "Registro por minuto de la estación de la UCR (CIGEFI) en San Luis."
+        logging.info("UCR ucr-sanluis hora=%s lluvia_hora=%s hoy=%s estado=%s", row.get("image_timestamp"),
+                     row["rain_last_hour_mm"], row.get("rain_today_mm"), row["availability_status"])
+    except Exception as exc:
+        row["message"] = f"No se pudo leer la estación de San Luis: {exc}"
+        logging.warning("UCR ucr-sanluis: %s", row["message"])
+    return row
+
+
 def status_signature(payload: dict) -> tuple:
     rows = payload.get("cameras", []) if isinstance(payload, dict) else []
     station_rows = payload.get("stations", []) if isinstance(payload, dict) else []
@@ -1257,34 +1331,9 @@ def fetch_weatherlink_station(session: requests.Session) -> dict:
     return result
 
 
-def probe_ucr_js(session: requests.Session) -> None:
-    """Sondeo temporal: cómo se interpreta la lluvia (te525) en San Luis."""
-    import re as _re
-    base = "https://tooji.cigefi.ucr.ac.cr/estaciones/"
-    try:
-        js = session.get(base + "SanLuis/scripts/js/dashboard.js?v=4", timeout=HTTP_TIMEOUT).text
-        for i, line in enumerate(js.splitlines()):
-            if _re.search(r"te525|rain|lluvia|acumul|sum|reduce", line, _re.I):
-                logging.info("UCRJS SL js L%03d %s", i, line.strip()[:240])
-        r = session.get(base + "SanLuis/scripts/bash/data.txt", timeout=60, headers={"Range": "bytes=-400000"})
-        logging.info("UCRJS SL data %s len=%s", r.status_code, len(r.text))
-        lines = [l for l in r.text.splitlines() if "te525=" in l]
-        vals = []
-        for l in lines:
-            m = _re.search(r"te525=([-0-9.]+)", l)
-            if m and float(m.group(1)) != 0:
-                vals.append(l[:19] + " " + m.group(1))
-        logging.info("UCRJS SL lineas=%s no_cero=%s", len(lines), len(vals))
-        for v in vals[:40]:
-            logging.info("UCRJS SL nz %s", v)
-    except Exception as exc:
-        logging.info("UCRJS SL falló: %s", exc)
-
-
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     session = session_with_headers()
-    probe_ucr_js(session)
     catalog = load_catalog(session)
     previous_payload = read_previous_payload()
     previous_rows = {
@@ -1444,6 +1493,7 @@ def main() -> int:
     # Estaciones IMN: lecturas instrumentales independientes del análisis visual.
     stations = collect_imn_stations(session)
     stations.extend(collect_ucr_stations(session))
+    stations.append(collect_ucr_sanluis(session))
     apply_station_history(stations, {item.get("id"): item for item in previous_payload.get("stations", []) if isinstance(item, dict)})
     external_stations = [fetch_weatherlink_station(session)]
     station_alerts = [

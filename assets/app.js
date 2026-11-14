@@ -254,6 +254,7 @@ const PUBLIC_STATIONS = [
   { id: "ucr-sanramon", name: "Estación UCR · Sede Occidente (San Ramón)", zone: "Valle Central Oeste", lat: 10.0877, lon: -84.4730, url: "https://tooji.cigefi.ucr.ac.cr/estaciones/SanRamon/Current_Vantage_Pro_Plus.htm", tableUrl: "https://tooji.cigefi.ucr.ac.cr/estaciones/SanRamon/Current_Vantage_Pro_Plus.htm", coordinateNote: "Ubicación aproximada de la localidad; no es la posición exacta del sensor." },
   { id: "ucr-piro", name: "Estación UCR · Piro (Osa)", zone: "Pacífico Sur", lat: 8.4200, lon: -83.3200, url: "https://tooji.cigefi.ucr.ac.cr/estaciones/Piro/Current_Vantage_Pro_Plus.htm", tableUrl: "https://tooji.cigefi.ucr.ac.cr/estaciones/Piro/Current_Vantage_Pro_Plus.htm", coordinateNote: "Ubicación aproximada de la localidad; no es la posición exacta del sensor." },
   { id: "ucr-siquirres", name: "Estación UCR · Siquirres", zone: "Caribe", lat: 10.0975, lon: -83.5075, url: "https://tooji.cigefi.ucr.ac.cr/estaciones/Siquirres/Current_Vantage_Pro_Plus.htm", tableUrl: "https://tooji.cigefi.ucr.ac.cr/estaciones/Siquirres/Current_Vantage_Pro_Plus.htm", coordinateNote: "Ubicación aproximada de la localidad; no es la posición exacta del sensor." },
+  { id: "ucr-sanluis", name: "Estación UCR · Reserva Biológica San Luis (Monteverde)", zone: "Pacífico Norte", lat: 10.2830, lon: -84.7870, url: "https://tooji.cigefi.ucr.ac.cr/estaciones/SanLuis/", tableUrl: "https://tooji.cigefi.ucr.ac.cr/estaciones/SanLuis/", coordinateNote: "Ubicación aproximada de la localidad; no es la posición exacta del sensor." },
 ];
 
 let homeLocation = null;
@@ -1096,7 +1097,7 @@ function addCameraMarkers() {
     const rainHour = observation && observation.rain_last_hour_mm != null && Number.isFinite(Number(observation.rain_last_hour_mm))
       ? Number(observation.rain_last_hour_mm).toFixed(1) + (observation.data_source === "ucr_cigefi_vantage" ? " mm/h" : " mm")
       : "Sin lectura";
-    const rainDayRaw = observation && observation.data_source === "ucr_cigefi_vantage" ? observation.rain_today_mm : (observation && observation.rain_since_7am_mm);
+    const rainDayRaw = observation && fromUcrRow(observation) ? observation.rain_today_mm : (observation && observation.rain_since_7am_mm);
     const rainDay = rainDayRaw != null && Number.isFinite(Number(rainDayRaw))
       ? Number(rainDayRaw).toFixed(1) + " mm"
       : "Sin lectura";
@@ -1127,12 +1128,13 @@ function addCameraMarkers() {
     const updatedAge = obsAgeMin == null ? "" : obsAgeMin < 90 ? ` (hace ${obsAgeMin} min)` : ` (hace ${Math.round(obsAgeMin / 60)} h)`;
     const stationStatus = observation ? cameraAvailabilityText(availability) : "Esperando primera lectura";
     const isUcr = !!(observation && observation.data_source === "ucr_cigefi_vantage");
+    const fromUcr = !!(observation && String(observation.data_source || "").startsWith("ucr_"));
     const stationMessage = rainObserved
       ? (isUcr ? "La estación de la UCR registra lluvia en este momento." : "La estación registró precipitación en la última hora.")
       : observation && availability === "stale"
         ? "La tabla del IMN está desactualizada; no se usa para alertas actuales."
-        : isUcr
-          ? "Lectura de la estación de la UCR (CIGEFI), actualizada cada 5 min; la lluvia es la intensidad actual."
+        : fromUcr
+          ? (isUcr ? "Lectura de la estación de la UCR (CIGEFI), actualizada cada 5 min; la lluvia es la intensidad actual." : "Registro por minuto de la estación de la UCR (CIGEFI); la lluvia es la suma de la última hora.")
         : observation && observation.data_source === "imn_html_table"
           ? "Lectura instrumental obtenida directamente de la tabla HTML oficial del IMN."
           : "Lectura del IMN pendiente de verificación.";
@@ -1140,7 +1142,7 @@ function addCameraMarkers() {
       <div class="camera-popup-status">${escapeHtml(stationMessage)}</div>
       <div class="station-metrics">
         <div class="station-metric"><span>${isUcr ? "Lluvia · intensidad ahora" : "Lluvia · última hora"}</span><strong>${escapeHtml(rainHour)}</strong></div>
-        <div class="station-metric"><span>${isUcr ? "Acumulada hoy" : "Acumulada desde 7 a. m."}</span><strong>${escapeHtml(rainDay)}</strong></div>
+        <div class="station-metric"><span>${fromUcr ? "Acumulada hoy" : "Acumulada desde 7 a. m."}</span><strong>${escapeHtml(rainDay)}</strong></div>
         <div class="station-metric"><span>Temperatura</span><strong>${escapeHtml(temperature)}</strong></div>
         <div class="station-metric"><span>Humedad</span><strong>${escapeHtml(humidity)}</strong></div>
         <div class="station-metric"><span>Viento</span><strong>${escapeHtml(wind)}</strong></div>
@@ -1148,7 +1150,7 @@ function addCameraMarkers() {
         <div class="station-metric"><span>Dirección del viento</span><strong>${escapeHtml(windDirection)}</strong></div>
         <div class="station-metric"><span>Punto de rocío</span><strong>${escapeHtml(dewPoint)}</strong></div>
       </div>
-      <small class="camera-popup-meta">Estado: ${escapeHtml(stationStatus)} · Observación: ${escapeHtml(updated + updatedAge)} · ${isUcr ? "Datos de la UCR (CIGEFI)" : "Datos preliminares del IMN"}</small>
+      <small class="camera-popup-meta">Estado: ${escapeHtml(stationStatus)} · Observación: ${escapeHtml(updated + updatedAge)} · ${fromUcr ? "Datos de la UCR (CIGEFI)" : "Datos preliminares del IMN"}</small>
       <div class="camera-popup-links">
         <a class="camera-popup-link" href="${escapeHtml(station.tableUrl || station.url)}" target="_blank" rel="noopener">Consultar datos oficiales ↗</a>
         ${station.url && station.url !== station.tableUrl ? '<a class="camera-popup-link" href="' + escapeHtml(station.url) + '" target="_blank" rel="noopener">Ver panel gráfico ↗</a>' : ""}
@@ -1216,6 +1218,10 @@ function syncBasemapButton() {
   if (!b) return;
   b.textContent = basemapMode === "dark" ? "🌙" : "☀️";
   b.title = basemapMode === "dark" ? "Fondo oscuro · toca para fondo claro" : "Fondo claro · toca para fondo oscuro";
+}
+
+function fromUcrRow(row) {
+  return !!(row && String(row.data_source || "").startsWith("ucr_"));
 }
 
 function applyBasemap(mode) {
