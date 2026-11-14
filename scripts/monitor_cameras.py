@@ -1258,21 +1258,27 @@ def fetch_weatherlink_station(session: requests.Session) -> dict:
 
 
 def probe_ucr_js(session: requests.Session) -> None:
-    """Sondeo temporal: registra el contenido de las fuentes de datos de la UCR."""
+    """Sondeo temporal: cómo se interpreta la lluvia (te525) en San Luis."""
+    import re as _re
     base = "https://tooji.cigefi.ucr.ac.cr/estaciones/"
-    for path in ("powell/get_data.php", "cr1000x/get_data.php", "SanLuis/scripts/bash/data.txt"):
-        try:
-            r = session.get(base + path, timeout=HTTP_TIMEOUT)
-            text = r.text
-            logging.info("UCRJS %s %s len=%s ct=%s", path, r.status_code, len(text), r.headers.get("content-type"))
-            lines = text.splitlines()
-            if len(lines) > 3:
-                for i in list(range(0, 4)) + list(range(max(4, len(lines) - 3), len(lines))):
-                    logging.info("UCRJS %s L%d %s", path, i, lines[i][:400])
-            else:
-                logging.info("UCRJS %s HEAD %s", path, text[:1800].replace("\n", " "))
-        except Exception as exc:
-            logging.info("UCRJS %s falló: %s", path, exc)
+    try:
+        js = session.get(base + "SanLuis/scripts/js/dashboard.js?v=4", timeout=HTTP_TIMEOUT).text
+        for i, line in enumerate(js.splitlines()):
+            if _re.search(r"te525|rain|lluvia|acumul|sum|reduce", line, _re.I):
+                logging.info("UCRJS SL js L%03d %s", i, line.strip()[:240])
+        r = session.get(base + "SanLuis/scripts/bash/data.txt", timeout=60, headers={"Range": "bytes=-400000"})
+        logging.info("UCRJS SL data %s len=%s", r.status_code, len(r.text))
+        lines = [l for l in r.text.splitlines() if "te525=" in l]
+        vals = []
+        for l in lines:
+            m = _re.search(r"te525=([-0-9.]+)", l)
+            if m and float(m.group(1)) != 0:
+                vals.append(l[:19] + " " + m.group(1))
+        logging.info("UCRJS SL lineas=%s no_cero=%s", len(lines), len(vals))
+        for v in vals[:40]:
+            logging.info("UCRJS SL nz %s", v)
+    except Exception as exc:
+        logging.info("UCRJS SL falló: %s", exc)
 
 
 def main() -> int:
