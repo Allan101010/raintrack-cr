@@ -1258,29 +1258,19 @@ def fetch_weatherlink_station(session: requests.Session) -> dict:
 
 
 def probe_ucr_js(session: requests.Session) -> None:
-    """Sondeo temporal: registra de dónde cargan datos las páginas de la UCR."""
-    import re as _re
+    """Sondeo temporal: registra el contenido de las fuentes de datos de la UCR."""
     base = "https://tooji.cigefi.ucr.ac.cr/estaciones/"
-    for path in ("powell/", "SanLuis/", "cr1000x/"):
+    for path in ("powell/get_data.php", "cr1000x/get_data.php", "SanLuis/scripts/bash/data.txt"):
         try:
             r = session.get(base + path, timeout=HTTP_TIMEOUT)
-            html = r.text
-            srcs = _re.findall(r"""<script[^>]+src=["']([^"']+)["']""", html)
-            logging.info("UCRJS %s srcs=%s", path, srcs)
-            for i, line in enumerate(html.splitlines()):
-                if _re.search(r"fetch|XMLHttpRequest|axios|\.json|\.csv|\.php|api|http|url|endpoint|query|data/", line, _re.I):
-                    logging.info("UCRJS %s L%03d %s", path, i, line.strip()[:260])
-            for src in srcs:
-                if src.startswith("http") and "tooji" not in src:
-                    continue
-                url = src if src.startswith("http") else base + path + src.lstrip("./")
-                try:
-                    js = session.get(url, timeout=HTTP_TIMEOUT).text
-                    for i, line in enumerate(js.splitlines()):
-                        if _re.search(r"fetch|XMLHttpRequest|\.json|\.csv|\.php|api|http|endpoint|url", line, _re.I):
-                            logging.info("UCRJS %s %s L%03d %s", path, src[-30:], i, line.strip()[:260])
-                except Exception as exc:
-                    logging.info("UCRJS %s %s falló %s", path, src, exc)
+            text = r.text
+            logging.info("UCRJS %s %s len=%s ct=%s", path, r.status_code, len(text), r.headers.get("content-type"))
+            lines = text.splitlines()
+            if len(lines) > 3:
+                for i in list(range(0, 4)) + list(range(max(4, len(lines) - 3), len(lines))):
+                    logging.info("UCRJS %s L%d %s", path, i, lines[i][:400])
+            else:
+                logging.info("UCRJS %s HEAD %s", path, text[:1800].replace("\n", " "))
         except Exception as exc:
             logging.info("UCRJS %s falló: %s", path, exc)
 
