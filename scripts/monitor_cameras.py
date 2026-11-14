@@ -1180,13 +1180,10 @@ def probe_cigefi(session: requests.Session) -> None:
     """Sondeo temporal: solo registra el HTML de la página de estaciones del CIGEFI."""
     import re as _re
     try:
-        r = session.get("https://tooji.cigefi.ucr.ac.cr/estaciones/", timeout=HTTP_TIMEOUT)
-        html = r.text
-        logging.info("CIGEFI %s len=%s", r.status_code, len(html))
-        for u in sorted(set(_re.findall(r"""(?:src|href)=["']([^"']+)["']""", html)))[:60]:
-            logging.info("CIGEFI link %s", u)
-        for u in sorted(set(_re.findall(r"""["'](/?[A-Za-z0-9_./-]*(?:api|json|data|estaciones)[A-Za-z0-9_./?=&-]*)["']""", html)))[:60]:
-            logging.info("CIGEFI ref %s", u)
+        r = session.get("https://tooji.cigefi.ucr.ac.cr/estaciones/script.js", timeout=HTTP_TIMEOUT)
+        logging.info("CIGEFI js %s len=%s", r.status_code, len(r.text))
+        for i, line in enumerate(r.text.splitlines()[:120]):
+            logging.info("CIGEFI L%03d %s", i, line[:220])
     except Exception as exc:
         logging.info("CIGEFI falló: %s", exc)
 
