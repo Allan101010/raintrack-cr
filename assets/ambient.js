@@ -7,6 +7,7 @@
   const enabled = true; // el ambiente animado queda siempre activo
 
   let state = { kind: "clear", isDay: true, intensity: 0 };
+  let lastCurrent = null, localRain = null; // localRain: true/false según estaciones cercanas, null = sin dato
   let canvas, ctx, celestial, rafId = null;
   let drops = [], splashes = [], rects = [], mapRect = null, lastRectsAt = 0, dpr = 1, W = 0, H = 0;
 
@@ -260,6 +261,12 @@
     if (ctx) ctx.clearRect(0, 0, W, H);
   }
 
+  function refresh() {
+    state = classify(lastCurrent.weather_code, lastCurrent.is_day);
+    if (localRain === false && state.kind === "rain") state = { kind: "cloudy", isDay: state.isDay, intensity: 0 };
+    apply();
+  }
+
   function apply() {
     buildCelestial();
     document.body.classList.toggle("amb-on", enabled);
@@ -270,8 +277,13 @@
   window.RainTrackAmbient = {
     setWeather(current) {
       if (!current || window.__ambientForced) return;
-      state = classify(current.weather_code, current.is_day);
-      apply();
+      lastCurrent = current;
+      refresh();
+    },
+    // Estaciones medidas cerca del usuario mandan sobre el modelo: sin lluvia medida, sin animación de lluvia.
+    setLocalRain(value) {
+      localRain = value === true || value === false ? value : null;
+      if (lastCurrent && !window.__ambientForced) refresh();
     },
     flash() { if (rafId) bolt = makeBolt(); },
     preview(name) {

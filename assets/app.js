@@ -869,11 +869,43 @@ $("cameraAlertStack").addEventListener("click", event => {
   renderCameraAlerts();
 });
 
+// ¿Llueve donde está el usuario? Se decide con estaciones medidas cercanas (no con el modelo).
+const AMBIENT_RAIN_RADIUS_KM = 15;
+
+function distanceKm(lat1, lon1, lat2, lon2) {
+  const rad = Math.PI / 180;
+  const a = Math.sin((lat2 - lat1) * rad / 2) ** 2 +
+    Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin((lon2 - lon1) * rad / 2) ** 2;
+  return 12742 * Math.asin(Math.sqrt(a));
+}
+
+function updateAmbientLocalRain() {
+  if (!window.RainTrackAmbient) return;
+  if (!homeLocation || !cameraMonitorData || !Array.isArray(cameraMonitorData.stations)) {
+    window.RainTrackAmbient.setLocalRain(null);
+    return;
+  }
+  let nearbyOnline = 0;
+  let nearbyRain = false;
+  cameraMonitorData.stations.forEach(row => {
+    if (!row || row.availability_status !== "online" || row.dead) return;
+    const def = PUBLIC_STATIONS.find(item => item.id === row.id);
+    const lat = Number(def ? def.lat : row.lat);
+    const lon = Number(def ? def.lon : row.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+    if (distanceKm(homeLocation.lat, homeLocation.lon, lat, lon) > AMBIENT_RAIN_RADIUS_KM) return;
+    nearbyOnline += 1;
+    if (Number(row.rain_last_hour_mm) > 0) nearbyRain = true;
+  });
+  window.RainTrackAmbient.setLocalRain(nearbyOnline === 0 ? null : nearbyRain);
+}
+
 async function loadCameraMonitoringData() {
   try {
     const response = await fetch("camera-alerts.json?rt=" + Date.now(), { cache: "no-store" });
     if (!response.ok) throw new Error("No existe camera-alerts.json o GitHub Pages aún no lo publicó.");
     cameraMonitorData = await response.json();
+    updateAmbientLocalRain();
     renderCameraAlerts();
     if (mapReady && ownRainSelected) showOwnRainSource();
     if (mapReady && ($("camerasToggle").checked || $("stationsToggle").checked || $("tempToggle").checked)) addCameraMarkers();
@@ -2377,7 +2409,10 @@ async function loadWeatherForLocation(location, type) {
 
     renderWeatherCard(cardId, location, data, isHome);
     renderSolarCard(solarId, location, data, isHome);
-    if (isHome && window.RainTrackAmbient) window.RainTrackAmbient.setWeather(data.current);
+    if (isHome && window.RainTrackAmbient) {
+      window.RainTrackAmbient.setWeather(data.current);
+      updateAmbientLocalRain();
+    }
 
     if (isHome && !destinationLocation) renderForecast(location, data);
     if (!isHome) renderForecast(location, data);
