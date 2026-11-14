@@ -1179,13 +1179,18 @@ def fetch_weatherlink_station(session: requests.Session) -> dict:
 def probe_cigefi(session: requests.Session) -> None:
     """Sondeo temporal: solo registra el HTML de la página de estaciones del CIGEFI."""
     import re as _re
-    try:
-        r = session.get("https://tooji.cigefi.ucr.ac.cr/estaciones/script.js", timeout=HTTP_TIMEOUT)
-        logging.info("CIGEFI js %s len=%s", r.status_code, len(r.text))
-        for i, line in enumerate(r.text.splitlines()[:120]):
-            logging.info("CIGEFI L%03d %s", i, line[:220])
-    except Exception as exc:
-        logging.info("CIGEFI falló: %s", exc)
+    import re as _re
+    base = "https://tooji.cigefi.ucr.ac.cr/estaciones/"
+    for path in ("SanPedro/Current_Vantage_Pro.htm", "SanRamon/Current_Vantage_Pro_Plus.htm",
+                 "Prusia/Current_Vantage_Pro_Plus.htm", "Piro/Current_Vantage_Pro_Plus.htm",
+                 "BarraHonda/Current_Vantage_Pro_Plus.htm", "Siquirres/Current_Vantage_Pro_Plus.htm",
+                 "cr1000x/", "powell/", "SanLuis/"):
+        try:
+            r = session.get(base + path, timeout=HTTP_TIMEOUT)
+            text = _re.sub(r"\s+", " ", _re.sub(r"<[^>]+>", " ", r.text))
+            logging.info("CIGEFI %s -> %s len=%s :: %s", path, r.status_code, len(r.text), text[:900])
+        except Exception as exc:
+            logging.info("CIGEFI %s falló: %s", path, exc)
 
 
 def main() -> int:
