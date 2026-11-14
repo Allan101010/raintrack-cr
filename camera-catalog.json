@@ -1,6 +1,6 @@
 {
   "schema_version": 5,
-  "generated_at": "2026-11-14T09:10:43Z",
+  "generated_at": "2026-11-14T15:20:40Z",
   "cameras": [
     {
       "id": "playa-flamingo-flamingo-2",
@@ -314,7 +314,22 @@
       "lon": -85.058,
       "camera_name": "Reserva Karen Mogensen ahora mismo",
       "page_url": "https://webcamscostarica.com/reserva-karen-mogensen/",
-      "snapshot_url": "https://meteo.unimore.it/meteo/ossgeo/karen/karen.jpg?_=14955395",
+      "snapshot_url": "https://meteo.unimore.it/meteo/ossgeo/karen/karen.jpg?_=14955580",
+      "source_type": "webcamscostarica",
+      "weather_relevant": true,
+      "reason": "Candidata: la IA evaluará si el encuadre muestra entorno exterior útil para meteorología.",
+      "initial_status": "pending"
+    },
+    {
+      "id": "santa-teresa-default",
+      "site_slug": "santa-teresa",
+      "site_name": "Santa Teresa",
+      "zone": "Península de Nicoya",
+      "lat": 9.646,
+      "lon": -85.169,
+      "camera_name": "Santa Teresa ahora mismo",
+      "page_url": "https://webcamscostarica.com/santa-teresa/",
+      "snapshot_url": "https://webcamscostarica.com/snap/santa-teresa-malpais-960.jpg",
       "source_type": "webcamscostarica",
       "weather_relevant": true,
       "reason": "Candidata: la IA evaluará si el encuadre muestra entorno exterior útil para meteorología.",
@@ -766,21 +781,6 @@
       "lon": -85.841,
       "camera_name": "Tamarindo · Witch's Rock 2",
       "page_url": "https://webcamscostarica.com/tamarindo/?cam=tamarindo-witchsrock-2",
-      "snapshot_url": null,
-      "source_type": "webcamscostarica",
-      "weather_relevant": true,
-      "reason": "Candidata: la IA evaluará si el encuadre muestra entorno exterior útil para meteorología.",
-      "initial_status": "offline"
-    },
-    {
-      "id": "santa-teresa-default",
-      "site_slug": "santa-teresa",
-      "site_name": "Santa Teresa",
-      "zone": "Península de Nicoya",
-      "lat": 9.646,
-      "lon": -85.169,
-      "camera_name": "Mientras tanto, en vivo cerca de aquí",
-      "page_url": "https://webcamscostarica.com/santa-teresa/",
       "snapshot_url": null,
       "source_type": "webcamscostarica",
       "weather_relevant": true,
