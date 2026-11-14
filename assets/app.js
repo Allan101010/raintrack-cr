@@ -1040,6 +1040,8 @@ function addCameraMarkers() {
     ? cameraMonitorData.stations
     : [];
   (showStations ? PUBLIC_STATIONS : []).forEach(station => {
+    const rowForDead = stationRows.find(item => item.id === station.id);
+    if (rowForDead && rowForDead.dead) return;
     if (station.externalWidget) {
       const element = document.createElement("button");
       element.type = "button";
@@ -1220,7 +1222,44 @@ function applyBasemap(mode) {
     try { await addCostaRicaFocusMask(); } catch (error) { console.warn("Contorno de Costa Rica no disponible:", error); }
     if (lastRouteDraw) { try { drawRouteOnMap(lastRouteDraw.route, lastRouteDraw.origin, lastRouteDraw.destination); } catch (e) {} }
     if (!ownRainSelected && radarFrames.length) showRadarFrame(radarFrameIndex);
+    if (ownRainSelected) addSatUnderlay();
   });
+}
+
+let satUnderlayTile = null;
+
+function removeSatUnderlay() {
+  if (!mapReady || !map.getStyle()) return;
+  if (map.getLayer("raintrack-sat-layer")) map.removeLayer("raintrack-sat-layer");
+  if (map.getSource("raintrack-sat-source")) map.removeSource("raintrack-sat-source");
+}
+
+function addSatUnderlay() {
+  if (!mapReady || !satUnderlayTile || !ownRainSelected) return;
+  removeSatUnderlay();
+  map.addSource("raintrack-sat-source", {
+    type: "raster", tiles: [satUnderlayTile], tileSize: 256, minzoom: 0, maxzoom: RADAR_SOURCES.librewxr.maxZoom,
+    attribution: "Satélite estimado: LibreWXR / NOAA RRQPE"
+  });
+  const firstSymbol = map.getStyle().layers.find(layer => layer.type === "symbol");
+  const def = {
+    id: "raintrack-sat-layer", type: "raster", source: "raintrack-sat-source",
+    paint: { "raster-opacity": 0.32, "raster-fade-duration": 0, "raster-resampling": "linear" }
+  };
+  if (firstSymbol) map.addLayer(def, firstSymbol.id); else map.addLayer(def);
+}
+
+async function loadSatUnderlay() {
+  try {
+    const config = RADAR_SOURCES.librewxr;
+    const metadata = await fetchJson(config.metadataUrl);
+    const past = Array.isArray(metadata.radar?.past) ? metadata.radar.past : [];
+    if (!past.length) return;
+    satUnderlayTile = radarTileUrl(past[past.length - 1], metadata, config);
+    addSatUnderlay();
+  } catch (error) {
+    console.warn("Fondo satelital no disponible:", error);
+  }
 }
 
 function removeRadarLayer() {
@@ -1263,6 +1302,7 @@ function showOwnRainSource() {
   $("radarTime").textContent = "Estaciones del IMN · lectura de las " + when + (genAge == null ? "" : " (hace " + genAge + " min)");
   $("frameLabel").textContent = "--";
   $("mapToolbar").classList.add("own-rain-mode");
+  if (satUnderlayTile) addSatUnderlay(); else loadSatUnderlay();
   if (window.RainTrackOwnRain) { window.RainTrackOwnRain.rebuild(); window.RainTrackOwnRain.sync(); }
   const storms = window.RainTrackOwnRain ? window.RainTrackOwnRain.stormCount() : 0;
   const cellsNow = window.RainTrackOwnRain ? window.RainTrackOwnRain.cellCount() : 0;
@@ -1271,7 +1311,7 @@ function showOwnRainSource() {
   stats.innerHTML =
     `<span class="orc ${cellsNow ? "on" : ""}"><b>${cellsNow}</b> ${cellsNow === 1 ? "estación con lluvia" : "estaciones con lluvia"}</span>` +
     `<span class="orc ${storms ? "storm" : ""}"><b>${storms}</b> ${storms === 1 ? "tormenta" : "tormentas"}</span>` +
-    `<span class="orc hint">Solo donde hay estación midiendo</span>`;
+    `<span class="orc hint">Color vivo = medido · tenue = satélite estimado</span>`;
   $("mapStatusChip").textContent = storms
     ? "⛈️ " + storms + (storms === 1 ? " zona con tormenta" : " zonas con tormenta") + " · lluvia intensa medida"
     : cellsNow ? "🌧️ Lluvia medida en " + cellsNow + (cellsNow === 1 ? " estación" : " estaciones") : "☀️ Sin lluvia medida ahora · estaciones IMN";
@@ -1293,6 +1333,7 @@ async function loadRadarSource() {
     return;
   }
   ownRainSelected = false;
+  removeSatUnderlay();
   $("mapToolbar").classList.remove("own-rain-mode");
   $("ownRainStats").hidden = true;
   if (window.RainTrackOwnRain) window.RainTrackOwnRain.sync();

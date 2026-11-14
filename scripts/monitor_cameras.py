@@ -969,6 +969,31 @@ def extract_imn_station_values(image: Image.Image) -> dict:
     return values
 
 
+DEAD_STATION_DAYS = 7
+
+
+def apply_station_history(stations: list[dict], previous_stations: dict) -> None:
+    """Lleva la cuenta de cuándo transmitió cada estación por última vez.
+
+    Una estación que pasa más de DEAD_STATION_DAYS sin una lectura reciente se marca
+    como `dead` (la app la oculta) y vuelve sola en cuanto transmita de nuevo.
+    """
+    now = utc_now()
+    for station in stations:
+        previous = previous_stations.get(station.get("id"), {})
+        if station.get("availability_status") in {"online", "delayed"}:
+            station["last_ok_at"] = iso_now()
+        else:
+            station["last_ok_at"] = previous.get("last_ok_at") or previous.get("first_seen_at")
+        station["first_seen_at"] = previous.get("first_seen_at") or iso_now()
+        reference = station.get("last_ok_at") or station["first_seen_at"]
+        try:
+            since = datetime.fromisoformat(reference.replace("Z", "+00:00"))
+            station["dead"] = (now - since.astimezone(timezone.utc)) > timedelta(days=DEAD_STATION_DAYS)
+        except (TypeError, ValueError):
+            station["dead"] = False
+
+
 def collect_imn_stations(session: requests.Session) -> list[dict]:
     stations = []
     for station in IMN_STATIONS:
@@ -1312,6 +1337,7 @@ def main() -> int:
 
     # Estaciones IMN: lecturas instrumentales independientes del análisis visual.
     stations = collect_imn_stations(session)
+    apply_station_history(stations, {item.get("id"): item for item in previous_payload.get("stations", []) if isinstance(item, dict)})
     external_stations = [fetch_weatherlink_station(session)]
     station_alerts = [
         {

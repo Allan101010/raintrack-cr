@@ -58,6 +58,19 @@ class StationFreshnessTests(unittest.TestCase):
             self.assertEqual(cams.assess_station_freshness("no-es-fecha")["availability_status"], "unknown")
 
 
+class StationHistoryTests(unittest.TestCase):
+    def test_dead_after_seven_days_and_recovers(self):
+        old = (cams.utc_now() - timedelta(days=8)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        previous = {"a": {"id": "a", "last_ok_at": old, "first_seen_at": old},
+                    "b": {"id": "b", "last_ok_at": old, "first_seen_at": old}}
+        rows = [{"id": "a", "availability_status": "stale"}, {"id": "b", "availability_status": "online"},
+                {"id": "c", "availability_status": "stale"}]
+        cams.apply_station_history(rows, previous)
+        self.assertTrue(rows[0]["dead"])
+        self.assertFalse(rows[1]["dead"])
+        self.assertFalse(rows[2]["dead"])
+
+
 class CameraSourcesTests(unittest.TestCase):
     def test_config_file_matches_loaded_constants(self):
         raw = json.loads(cams.CAMERA_SOURCES_PATH.read_text(encoding="utf-8"))
