@@ -1257,9 +1257,38 @@ def fetch_weatherlink_station(session: requests.Session) -> dict:
     return result
 
 
+def probe_ucr_js(session: requests.Session) -> None:
+    """Sondeo temporal: registra de dónde cargan datos las páginas de la UCR."""
+    import re as _re
+    base = "https://tooji.cigefi.ucr.ac.cr/estaciones/"
+    for path in ("powell/", "SanLuis/", "cr1000x/"):
+        try:
+            r = session.get(base + path, timeout=HTTP_TIMEOUT)
+            html = r.text
+            srcs = _re.findall(r"""<script[^>]+src=["']([^"']+)["']""", html)
+            logging.info("UCRJS %s srcs=%s", path, srcs)
+            for i, line in enumerate(html.splitlines()):
+                if _re.search(r"fetch|XMLHttpRequest|axios|\.json|\.csv|\.php|api|http|url|endpoint|query|data/", line, _re.I):
+                    logging.info("UCRJS %s L%03d %s", path, i, line.strip()[:260])
+            for src in srcs:
+                if src.startswith("http") and "tooji" not in src:
+                    continue
+                url = src if src.startswith("http") else base + path + src.lstrip("./")
+                try:
+                    js = session.get(url, timeout=HTTP_TIMEOUT).text
+                    for i, line in enumerate(js.splitlines()):
+                        if _re.search(r"fetch|XMLHttpRequest|\.json|\.csv|\.php|api|http|endpoint|url", line, _re.I):
+                            logging.info("UCRJS %s %s L%03d %s", path, src[-30:], i, line.strip()[:260])
+                except Exception as exc:
+                    logging.info("UCRJS %s %s falló %s", path, src, exc)
+        except Exception as exc:
+            logging.info("UCRJS %s falló: %s", path, exc)
+
+
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     session = session_with_headers()
+    probe_ucr_js(session)
     catalog = load_catalog(session)
     previous_payload = read_previous_payload()
     previous_rows = {
