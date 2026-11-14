@@ -250,7 +250,10 @@ const PUBLIC_STATIONS = [
   { id: "imn-marialuisa", name: "Estación IMN · María Luisa, Río Banano", zone: "Caribe Sur", lat: 9.9003, lon: -83.091, url: "https://www.imn.ac.cr/especial/estacionMariaLuisa.html", tableUrl: "https://www.imn.ac.cr/especial/tablas/marialuisa.html", coordinateNote: "Ubicación aproximada por localidad (María Luisa, Río Banano); no es la posición exacta del sensor." },
   { id: "imn-juanvinas", name: "Estación IMN · Maravilla, Juan Viñas", zone: "Caribe Sur", lat: 9.894, lon: -83.7454, url: "https://www.imn.ac.cr/especial/estacionJuanVinas.html", tableUrl: "https://www.imn.ac.cr/especial/tablas/juanvinas.html", coordinateNote: "Ubicación aproximada por localidad (Maravilla, Juan Viñas); no es la posición exacta del sensor." },
   { id: "imn-guayabo", name: "Estación IMN · Monumento Nacional Guayabo", zone: "Caribe Sur", lat: 9.9733, lon: -83.6928, url: "https://www.imn.ac.cr/especial/estacionMGuayabo.html", tableUrl: "https://www.imn.ac.cr/especial/tablas/guayabo.html", coordinateNote: "Ubicación aproximada por localidad (Monumento Nacional Guayabo); no es la posición exacta del sensor." },
-  { id: "imn-ptovargas", name: "Estación IMN · Puerto Vargas (Cahuita)", zone: "Caribe Sur", lat: 9.737, lon: -82.813, url: "https://www.imn.ac.cr/especial/estacionPtovargas.html", tableUrl: "https://www.imn.ac.cr/especial/tablas/ptovargas.html", coordinateNote: "Ubicación aproximada por localidad (Puerto Vargas (Cahuita)); no es la posición exacta del sensor." }
+  { id: "imn-ptovargas", name: "Estación IMN · Puerto Vargas (Cahuita)", zone: "Caribe Sur", lat: 9.737, lon: -82.813, url: "https://www.imn.ac.cr/especial/estacionPtovargas.html", tableUrl: "https://www.imn.ac.cr/especial/tablas/ptovargas.html", coordinateNote: "Ubicación aproximada por localidad (Puerto Vargas (Cahuita)); no es la posición exacta del sensor." },
+  { id: "ucr-sanramon", name: "Estación UCR · Sede Occidente (San Ramón)", zone: "Valle Central Oeste", lat: 10.0877, lon: -84.4730, url: "https://tooji.cigefi.ucr.ac.cr/estaciones/SanRamon/Current_Vantage_Pro_Plus.htm", tableUrl: "https://tooji.cigefi.ucr.ac.cr/estaciones/SanRamon/Current_Vantage_Pro_Plus.htm", coordinateNote: "Ubicación aproximada de la localidad; no es la posición exacta del sensor." },
+  { id: "ucr-piro", name: "Estación UCR · Piro (Osa)", zone: "Pacífico Sur", lat: 8.4200, lon: -83.3200, url: "https://tooji.cigefi.ucr.ac.cr/estaciones/Piro/Current_Vantage_Pro_Plus.htm", tableUrl: "https://tooji.cigefi.ucr.ac.cr/estaciones/Piro/Current_Vantage_Pro_Plus.htm", coordinateNote: "Ubicación aproximada de la localidad; no es la posición exacta del sensor." },
+  { id: "ucr-siquirres", name: "Estación UCR · Siquirres", zone: "Caribe", lat: 10.0975, lon: -83.5075, url: "https://tooji.cigefi.ucr.ac.cr/estaciones/Siquirres/Current_Vantage_Pro_Plus.htm", tableUrl: "https://tooji.cigefi.ucr.ac.cr/estaciones/Siquirres/Current_Vantage_Pro_Plus.htm", coordinateNote: "Ubicación aproximada de la localidad; no es la posición exacta del sensor." },
 ];
 
 let homeLocation = null;
@@ -1091,10 +1094,11 @@ function addCameraMarkers() {
     element.setAttribute("aria-label", "Abrir estación meteorológica: " + station.name);
 
     const rainHour = observation && observation.rain_last_hour_mm != null && Number.isFinite(Number(observation.rain_last_hour_mm))
-      ? Number(observation.rain_last_hour_mm).toFixed(1) + " mm"
+      ? Number(observation.rain_last_hour_mm).toFixed(1) + (observation.data_source === "ucr_cigefi_vantage" ? " mm/h" : " mm")
       : "Sin lectura";
-    const rainDay = observation && observation.rain_since_7am_mm != null && Number.isFinite(Number(observation.rain_since_7am_mm))
-      ? Number(observation.rain_since_7am_mm).toFixed(1) + " mm"
+    const rainDayRaw = observation && observation.data_source === "ucr_cigefi_vantage" ? observation.rain_today_mm : (observation && observation.rain_since_7am_mm);
+    const rainDay = rainDayRaw != null && Number.isFinite(Number(rainDayRaw))
+      ? Number(rainDayRaw).toFixed(1) + " mm"
       : "Sin lectura";
     const temperature = observation && observation.temperature_c != null && Number.isFinite(Number(observation.temperature_c))
       ? Number(observation.temperature_c).toFixed(1) + " °C"
@@ -1122,18 +1126,21 @@ function addCameraMarkers() {
       : null;
     const updatedAge = obsAgeMin == null ? "" : obsAgeMin < 90 ? ` (hace ${obsAgeMin} min)` : ` (hace ${Math.round(obsAgeMin / 60)} h)`;
     const stationStatus = observation ? cameraAvailabilityText(availability) : "Esperando primera lectura";
+    const isUcr = !!(observation && observation.data_source === "ucr_cigefi_vantage");
     const stationMessage = rainObserved
-      ? "La estación registró precipitación en la última hora."
+      ? (isUcr ? "La estación de la UCR registra lluvia en este momento." : "La estación registró precipitación en la última hora.")
       : observation && availability === "stale"
         ? "La tabla del IMN está desactualizada; no se usa para alertas actuales."
+        : isUcr
+          ? "Lectura de la estación de la UCR (CIGEFI), actualizada cada 5 min; la lluvia es la intensidad actual."
         : observation && observation.data_source === "imn_html_table"
           ? "Lectura instrumental obtenida directamente de la tabla HTML oficial del IMN."
           : "Lectura del IMN pendiente de verificación.";
     const popupHtml = `<div class="camera-popup">
       <div class="camera-popup-status">${escapeHtml(stationMessage)}</div>
       <div class="station-metrics">
-        <div class="station-metric"><span>Lluvia · última hora</span><strong>${escapeHtml(rainHour)}</strong></div>
-        <div class="station-metric"><span>Acumulada desde 7 a. m.</span><strong>${escapeHtml(rainDay)}</strong></div>
+        <div class="station-metric"><span>${isUcr ? "Lluvia · intensidad ahora" : "Lluvia · última hora"}</span><strong>${escapeHtml(rainHour)}</strong></div>
+        <div class="station-metric"><span>${isUcr ? "Acumulada hoy" : "Acumulada desde 7 a. m."}</span><strong>${escapeHtml(rainDay)}</strong></div>
         <div class="station-metric"><span>Temperatura</span><strong>${escapeHtml(temperature)}</strong></div>
         <div class="station-metric"><span>Humedad</span><strong>${escapeHtml(humidity)}</strong></div>
         <div class="station-metric"><span>Viento</span><strong>${escapeHtml(wind)}</strong></div>
@@ -1141,7 +1148,7 @@ function addCameraMarkers() {
         <div class="station-metric"><span>Dirección del viento</span><strong>${escapeHtml(windDirection)}</strong></div>
         <div class="station-metric"><span>Punto de rocío</span><strong>${escapeHtml(dewPoint)}</strong></div>
       </div>
-      <small class="camera-popup-meta">Estado: ${escapeHtml(stationStatus)} · Observación: ${escapeHtml(updated + updatedAge)} · Datos preliminares del IMN</small>
+      <small class="camera-popup-meta">Estado: ${escapeHtml(stationStatus)} · Observación: ${escapeHtml(updated + updatedAge)} · ${isUcr ? "Datos de la UCR (CIGEFI)" : "Datos preliminares del IMN"}</small>
       <div class="camera-popup-links">
         <a class="camera-popup-link" href="${escapeHtml(station.tableUrl || station.url)}" target="_blank" rel="noopener">Consultar datos oficiales ↗</a>
         ${station.url && station.url !== station.tableUrl ? '<a class="camera-popup-link" href="' + escapeHtml(station.url) + '" target="_blank" rel="noopener">Ver panel gráfico ↗</a>' : ""}

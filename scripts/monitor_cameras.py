@@ -1072,6 +1072,87 @@ def collect_imn_stations(session: requests.Session) -> list[dict]:
     return stations
 
 
+UCR_BASE = "https://tooji.cigefi.ucr.ac.cr/estaciones/"
+UCR_STATIONS = [
+    {"id": "ucr-sanramon", "station_name": "Estación UCR · Sede Occidente (San Ramón)", "zone": "Valle Central Oeste",
+     "lat": 10.0877, "lon": -84.4730, "path": "SanRamon/Current_Vantage_Pro_Plus.htm"},
+    {"id": "ucr-piro", "station_name": "Estación UCR · Piro (Osa)", "zone": "Pacífico Sur",
+     "lat": 8.4200, "lon": -83.3200, "path": "Piro/Current_Vantage_Pro_Plus.htm"},
+    {"id": "ucr-siquirres", "station_name": "Estación UCR · Siquirres", "zone": "Caribe",
+     "lat": 10.0975, "lon": -83.5075, "path": "Siquirres/Current_Vantage_Pro_Plus.htm"},
+]
+
+
+def parse_ucr_vantage(html_text: str) -> dict:
+    """Extrae hora local (UTC-6), lluvia y variables de la página 'Condiciones actuales' de la UCR."""
+    import html as _html
+    text = _html.unescape(re.sub(r"<[^>]+>", " ", html_text)).replace("\xa0", " ")
+    text = re.sub(r"\s+", " ", text)
+
+    def number(pattern: str):
+        match = re.search(pattern, text, re.IGNORECASE)
+        return float(match.group(1)) if match else None
+
+    stamp = re.search(r"(\d{1,2})/(\d{1,2})/(\d{2}),?\s*(\d{1,2}):(\d{2})\s*([ap])?", text)
+    timestamp = None
+    if stamp:
+        day, month, year, hour, minute, suffix = stamp.groups()
+        hour = int(hour)
+        if suffix == "p" and hour < 12:
+            hour += 12
+        elif suffix == "a" and hour == 12:
+            hour = 0
+        try:
+            local = datetime(2000 + int(year), int(month), int(day), hour, int(minute), tzinfo=timezone(timedelta(hours=-6)))
+            timestamp = local.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        except ValueError:
+            timestamp = None
+    return {
+        "image_timestamp": timestamp,
+        "rain_rate_mmh": number(r"Rain Rate\s*([0-9]+(?:\.[0-9]+)?)"),
+        "rain_today_mm": number(r"Today'?s Rain\s*([0-9]+(?:\.[0-9]+)?)"),
+        "temperature_c": number(r"Temperature\s*(-?[0-9]+(?:\.[0-9]+)?)\s*°C"),
+        "humidity_percent": number(r"Humidity\s*([0-9]+(?:\.[0-9]+)?)\s*%"),
+        "pressure_hpa": number(r"Barometer\s*([0-9]+(?:\.[0-9]+)?)"),
+    }
+
+
+def collect_ucr_stations(session: requests.Session) -> list[dict]:
+    """Estaciones de la UCR (CIGEFI) con lecturas cada 5 min. Solo cuentan si la hora de lectura es reciente."""
+    rows = []
+    for station in UCR_STATIONS:
+        row = {
+            "id": station["id"], "station_name": station["station_name"], "zone": station["zone"],
+            "lat": station["lat"], "lon": station["lon"],
+            "coordinate_note": "Ubicación aproximada de la localidad; no es la posición exacta del sensor.",
+            "page_url": UCR_BASE + station["path"], "source_url": UCR_BASE + station["path"],
+            "source_type": "ucr_station", "data_source": "ucr_cigefi_vantage",
+            "status": "offline", "availability_status": "offline", "checked_at": iso_now(),
+            "image_timestamp": None, "image_age_minutes": None, "image_timestamp_source": "not_provided",
+            "rain_last_hour_mm": None, "rain_since_7am_mm": None, "rain_observed": False,
+        }
+        try:
+            response = session.get(UCR_BASE + station["path"], timeout=HTTP_TIMEOUT)
+            response.raise_for_status()
+            values = parse_ucr_vantage(response.text)
+            row.update({k: v for k, v in values.items() if k != "rain_rate_mmh"})
+            row.update(assess_station_freshness(row.get("image_timestamp")))
+            row["status"] = row["availability_status"]
+            row["image_timestamp_source"] = "ucr_page" if row.get("image_timestamp") else "not_provided"
+            rate = values.get("rain_rate_mmh")
+            # La UCR publica intensidad instantánea (mm/h); se usa como estimación de la lluvia reciente.
+            row["rain_last_hour_mm"] = rate if rate is not None and rate > 0 else (0.0 if rate is not None else None)
+            row["rain_observed"] = bool(rate and rate > 0 and row["availability_status"] == "online")
+            row["message"] = "Lectura de la estación de la UCR (CIGEFI), actualizada cada 5 min; la lluvia es la intensidad actual (mm/h)."
+            logging.info("UCR %s hora=%s lluvia_mmh=%s hoy=%s estado=%s", station["id"], row.get("image_timestamp"), rate,
+                         values.get("rain_today_mm"), row["availability_status"])
+        except Exception as exc:
+            row["message"] = f"No se pudo leer la estación de la UCR: {exc}"
+            logging.warning("UCR %s: %s", station["id"], row["message"])
+        rows.append(row)
+    return rows
+
+
 def status_signature(payload: dict) -> tuple:
     rows = payload.get("cameras", []) if isinstance(payload, dict) else []
     station_rows = payload.get("stations", []) if isinstance(payload, dict) else []
@@ -1176,27 +1257,9 @@ def fetch_weatherlink_station(session: requests.Session) -> dict:
     return result
 
 
-def probe_cigefi(session: requests.Session) -> None:
-    """Sondeo temporal: solo registra el HTML de la página de estaciones del CIGEFI."""
-    import re as _re
-    import re as _re
-    base = "https://tooji.cigefi.ucr.ac.cr/estaciones/"
-    for path in ("SanPedro/Current_Vantage_Pro.htm", "SanRamon/Current_Vantage_Pro_Plus.htm",
-                 "Prusia/Current_Vantage_Pro_Plus.htm", "Piro/Current_Vantage_Pro_Plus.htm",
-                 "BarraHonda/Current_Vantage_Pro_Plus.htm", "Siquirres/Current_Vantage_Pro_Plus.htm",
-                 "cr1000x/", "powell/", "SanLuis/"):
-        try:
-            r = session.get(base + path, timeout=HTTP_TIMEOUT)
-            text = _re.sub(r"\s+", " ", _re.sub(r"<[^>]+>", " ", r.text))
-            logging.info("CIGEFI %s -> %s len=%s :: %s", path, r.status_code, len(r.text), text[:900])
-        except Exception as exc:
-            logging.info("CIGEFI %s falló: %s", path, exc)
-
-
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     session = session_with_headers()
-    probe_cigefi(session)
     catalog = load_catalog(session)
     previous_payload = read_previous_payload()
     previous_rows = {
@@ -1355,6 +1418,7 @@ def main() -> int:
 
     # Estaciones IMN: lecturas instrumentales independientes del análisis visual.
     stations = collect_imn_stations(session)
+    stations.extend(collect_ucr_stations(session))
     apply_station_history(stations, {item.get("id"): item for item in previous_payload.get("stations", []) if isinstance(item, dict)})
     external_stations = [fetch_weatherlink_station(session)]
     station_alerts = [

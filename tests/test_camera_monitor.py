@@ -71,6 +71,18 @@ class StationHistoryTests(unittest.TestCase):
         self.assertFalse(rows[2]["dead"])
 
 
+class UcrVantageTests(unittest.TestCase):
+    def test_parse_morning_and_afternoon(self):
+        html = "Actualizado cada 5 minutos: 14/11/26, 7:01a Temperature 20.5&nbsp;°C Humidity 98% Today's Rain 1.2&nbsp;mm Rain Rate 2.4&nbsp;mm/hr"
+        values = cams.parse_ucr_vantage(html)
+        self.assertEqual(values["image_timestamp"], "2026-11-14T13:01:00Z")
+        self.assertEqual(values["rain_rate_mmh"], 2.4)
+        self.assertEqual(values["rain_today_mm"], 1.2)
+        self.assertEqual(values["temperature_c"], 20.5)
+        afternoon = cams.parse_ucr_vantage("Actualizado: 14/11/26, 1:05p Rain Rate 0.0 mm/hr")
+        self.assertEqual(afternoon["image_timestamp"], "2026-11-14T19:05:00Z")
+
+
 class CameraSourcesTests(unittest.TestCase):
     def test_config_file_matches_loaded_constants(self):
         raw = json.loads(cams.CAMERA_SOURCES_PATH.read_text(encoding="utf-8"))
